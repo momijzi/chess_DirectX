@@ -12,10 +12,12 @@
 #include "DirectInput.h"
 
 #include"time.h"
+#include"DrawImage.h"
+#include"MoveFrame.h"
 
 #define screenWidth 960
 #define screenHeight 960
-#define Pixel 36
+#define Pixel 96
 
 //ウィンドウプロシージャ
 LRESULT CALLBACK WndPrc
@@ -226,14 +228,8 @@ HRESULT MakeWindow
 	return S_OK;
 }
 
-//スプライトのインスタンスを作成
-//パラメータは適当で
-Sprite sprite;
-Sprite sprite2;
-Texture textureColor;
-Texture textureStart;
-Texture textureOver;
-Texture textureClear;
+
+
 
 
 
@@ -248,19 +244,21 @@ int _stdcall WinMain
 	int nCmdShow)		//ウィンドウの表示状態
 {
 	//変数の宣言-------------------------------------
-	
+
 	srand((unsigned int)time(NULL));//乱数の初期値設定
 
 	enum GameMode { ZERO, START, PLAY, OVER };
 	GameMode game = ZERO;
 
-	
-	////メッセージボックス
-	//MessageBox(NULL,		//ウィンドウのハンドル 
-	//	TEXT("最初の設定に成功しましたぱちぱち"),		//本文
-	//	TEXT( "テスト-タイトル"),//タイトル
-	//	MB_OK);				//メッセージボックスのタイプ
-	//						//MB_OK  okのボタンが表示
+	DrawImage draw;//大体の描画
+	MoveFrame move;//駒の動き関係
+
+	int MousePositionX, MousePositionY;			//マウスの位置
+	int Mx, My;									//判断するための変数
+	const int BoardSize = 8;					//盤面の大きさ
+	int texflag = 0;							//盤面の画像入れ替え用
+	bool playerTurn;							//プレイヤー白がtrue
+
 
 	if (FAILED(RegistClassEx(hInstance)))
 	{
@@ -299,19 +297,24 @@ int _stdcall WinMain
 	//レンダーステートの設定  αブレンド
 	d3d.SetRenderState(RENDERSTATE::RENDER_ALPHABLEND);
 
-
+	Sprite sprite;
 	sprite.SetAlpha(0.1);						//透明度の設定
 	sprite.SetSize(Pixel, Pixel);				//画像の大きさ
 	sprite.SetAngle(0);							//画像の回転
 
 	//テクスチャのインスタンスを作成
-	textureColor.Load(_T("Texture/tex.png"));	//0[餌] 1[プレイヤー] 2[壁] 3[ミス]
-	textureStart.Load(_T("Texture/start.png"));	//スタート画像
-	textureOver.Load(_T("Texture/over.bmp"));	//失敗画像
-	textureClear.Load(_T("Texture/clear.png"));	//クリア画像
+	Texture texBoard;
+	texBoard.Load(_T("Texture/ChessBord.png"));
+
+	Texture texFrame;
+	texFrame.Load(_T("Texture/chess.png"));
+
+	Texture texMask;
+	texMask.Load(_T("Texture/mask.png"));
 
 	//ここで読み込んだ画像の分割処理
-	textureColor.SetDivide(4, 0);				//今回は４分割する
+	texBoard.SetDivide(2, 0);
+	texFrame.SetDivide(6, 2);
 
 	DirectInput * pDi = DirectInput::GetInstance();
 	pDi->Init(hWnd);
@@ -324,7 +327,7 @@ int _stdcall WinMain
 	//quitメッセージが出てくるまでループを繰り返す
 	//quitメッセージは上記のウィンドウプロシージャから送信
 	//送信の条件などはウィンドウプロシージャを確認
-	while (msg.message != WM_QUIT )
+	while (msg.message != WM_QUIT)
 	{
 
 		//PeekMessage
@@ -390,66 +393,148 @@ int _stdcall WinMain
 			{
 				case ZERO:
 					d3d.ClearScreen();
+					MousePositionX = screenWidth / 2, MousePositionY = screenHeight / 2;
+					playerTurn = true;
 
-
-					//壁の部分を初期化
-
+					move.NewFrameData();
 					game = START;
 
 					break;
 				case START:
 					//今回難易度設定ではなくコンフィグいじりにしてみる
 					//エンター押したときPLAYへ
-					if (pDi->KeyJustPressed(DIK_RETURN))
-					{
-						//難易度追加したかった。。。
-						/*switch (degree)
-						{
-							case Easy:
-								Speed = 20;
+					game = PLAY;
 
-								break;
-							case Herd:
-								Speed = 10;
-
-								break;
-							case Challenger:
-								Speed = 5;
-
-								break;
-						}*/
-
-						game = PLAY;
-					}
 					break;
 				case PLAY:
-					//とりあえず常時蛇が動くプログラム
+				{
+					Vector2<int> mousepos = pDi->MousePosition();
+					MousePositionX = mousepos.X();
+					MousePositionY = mousepos.Y();
+					Mx = (MousePositionX) / Pixel;
+					My = (MousePositionY) / Pixel;
 
-
-					break;
+					if (pDi->MouseButtonJustPressed(MOUSE_BUTTON_LEFT))
+					{
+						move.CheckFrame(playerTurn, Mx, My);
+					}
+					else
+					{
+						move.MoveRelease();
+					}
+				}
+				break;
 				case OVER:
 
 					game = ZERO;
-			
-			
+					break;
+			}
 
 			//まず描画 
 			d3d.BeginScene();//描画開始
 			//描画
 			d3d.ClearScreen();
 
-		
+
+			//盤面描画
+			for (int y = 0; y < BoardSize; y++)
+			{
+				for (int x = 0; x < BoardSize; x++)
+				{
+					//盤面の描画--------------------------------------------------------
+					sprite.SetPos(Pixel * x + Pixel / 2, Pixel * y + Pixel / 2);
+
+					if ((x + y) % 2 == 1)
+					{
+						texflag = 1;
+					}
+					else
+					{
+						texflag = 0;
+					}
+
+					texBoard.SetNum(texflag, 0);
+					sprite.Draw(texBoard);
+
+					//駒の描画
+					if (move.GetFrameData(x, y) != -1)
+					{
+						if (move.GetFramePlayer(x, y) != false)
+						{
+							if (move.GetFrameData(x, y) == 0)
+							{
+								texFrame.SetNum(5, 0);
+							}
+							else if (move.GetFrameData(x, y) == 1)
+							{
+								texFrame.SetNum(4, 0);
+							}
+							else if (move.GetFrameData(x, y) == 2)
+							{
+								texFrame.SetNum(2, 0);
+							}
+							else if (move.GetFrameData(x, y) == 3)
+							{
+								texFrame.SetNum(3, 0);
+							}
+							else if (move.GetFrameData(x, y) == 4)
+							{
+								texFrame.SetNum(1, 0);
+							}
+							else if (move.GetFrameData(x, y) == 5)
+							{
+								texFrame.SetNum(0, 0);
+							}
+						}
+						else
+						{
+							if (move.GetFrameData(x, y) == 0)
+							{
+								texFrame.SetNum(5, 1);
+							}
+							else if (move.GetFrameData(x, y) == 1)
+							{
+								texFrame.SetNum(4, 1);
+							}
+							else if (move.GetFrameData(x, y) == 2)
+							{
+								texFrame.SetNum(2, 1);
+							}
+							else if (move.GetFrameData(x, y) == 3)
+							{
+								texFrame.SetNum(3, 1);
+							}
+							else if (move.GetFrameData(x, y) == 4)
+							{
+								texFrame.SetNum(1, 1);
+							}
+							else if (move.GetFrameData(x, y) == 5)
+							{
+								texFrame.SetNum(0, 1);
+							}
+						}
+						sprite.Draw(texFrame);
+						if (move.GetMoveFrame(x, y) != false)
+						{
+							sprite.Draw(texMask);
+						}
+					}
+					//盤面描画終わり----------------------------------------------------
+				}
+			}
+
+
 			//ゲームのスタートとオーバー時に表示する画像描画//--------------------------------------------------------------------------------------------
-			
-			
+
+
 			//描画終了の合図//--------------------------------------------------------------------------------------------
 
 			d3d.EndScene();
 
 			//バックバッファをフロントへ反映
 			d3d.Present();
+
 		}
 	}
-
 	return 0;
 }
